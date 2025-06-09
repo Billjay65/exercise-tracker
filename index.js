@@ -78,6 +78,26 @@ const createAndSaveUser = (username, done) => {
   });
 };
 
+// get a list of all users from database
+const getAllUsers = (done) => {
+  User.find({}, (err, users) => {
+    if (err) return done(err);
+    done(null, users);
+  })
+}
+
+// Exercise methods
+// create and save a new exercise posted
+const createAndSaveExercise = (exerciseData, done) => {
+  const exercise = new Exercise(exerciseData);
+
+  exercise.save((err, data) => {
+    if (err) return done(err);
+    done(null, data);
+  });
+};
+
+
 module.exports = { Exercise, User, Log };
 
 /*** end myversion ***/
@@ -107,7 +127,71 @@ app.post('/api/users', function (req, res) {
       _id: data._id
     })
   });
+});
 
+// get users api endpoint server
+app.get('/api/users', function (req, res) {
+  // return all users in db
+  getAllUsers((err, data) => {
+    if (err) return res.json({
+      error: 'Error getting users'
+    });
+    
+    // return the users array directly
+    res.json(data);
+  })
+});
+
+// save new exercise api endpoint server
+app.post('/api/users/:_id/exercises', function (req, res) {
+  // use req.params._id since it is a url parameter
+  const userId = req.params._id;
+  const description = req.body.description;
+  const duration = Number(req.body.duration);
+
+  // Set date: use provided date or current date
+  let date;
+  if (!req.body.date) {
+    date = new Date();
+  } else {
+    date = new Date(req.body.date);
+    if (isNaN(date)) {
+      // invalid date fallback
+      date = new Date();
+    }
+  }
+
+  // prepare exercise object
+  const exerciseData = {
+    username: null, // will fill after fetching user
+    description,
+    duration,
+    date: date.toDateString()
+  };
+
+ // find user by _id first to get username
+  User.findById(userId, (err, user) => {
+    if (err || !user) {
+      return res.json({ error: 'User not found' });
+    }
+
+    exerciseData.username = user.username;
+
+    // save exercise
+    createAndSaveExercise(exerciseData, (err, exercise) => {
+      if (err) return res.json({ error: 'Error saving exercise' });
+
+      // response object format:
+      // { _id, username, date, duration, description }
+      res.json({
+        _id: user._id,
+        username: user.username,
+        date: exercise.date,
+        duration: exercise.duration,
+        description: exercise.description
+      });
+    });
+  });
 });
 /*** endmyversion  ***/
 
