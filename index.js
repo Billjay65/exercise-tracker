@@ -87,13 +87,44 @@ const getAllUsers = (done) => {
 }
 
 // Exercise methods
-// create and save a new exercise posted
-const createAndSaveExercise = (exerciseData, done) => {
+// create and save new exercise posted and update log
+const createAndSaveExerciseAndUpdateLog = (exerciseData, done) => {
   const exercise = new Exercise(exerciseData);
 
-  exercise.save((err, data) => {
+  exercise.save((err, savedExercise) => {
     if (err) return done(err);
-    done(null, data);
+
+    // Update or create log for this user
+    Log.findOne({ username: savedExercise.username }, (err, logDoc) => {
+      if (err) return done(err);
+
+      const newExerciseEntry = {
+        description: savedExercise.description,
+        duration: savedExercise.duration,
+        date: savedExercise.date
+      };
+
+      if (logDoc) {
+        // update existing log
+        logDoc.count += 1;
+        logDoc.log.push(newExerciseEntry);
+        logDoc.save((err, updatedLog) => {
+          if (err) return done(err);
+          done(null, savedExercise, updatedLog);
+        });
+      } else {
+        // create new log
+        const newLog = new Log({
+          username: savedExercise.username,
+          count: 1,
+          log: [newExerciseEntry]
+        });
+        newLog.save((err, createdLog) => {
+          if (err) return done(err);
+          done(null, savedExercise, createdLog);
+        });
+      }
+    });
   });
 };
 
@@ -106,17 +137,32 @@ const getLogsOfUser = (userId, done) => {
 
     const username = user.username;
 
-    Log.find({ username }, (err, logs) => {
+    // find the single log for the user
+    Log.findOne({ username }, (err, logDoc) => {
       if (err) return done(err);
+
+      // If no log yet, return empty log
+      if (!logDoc) {
+        return done(null, {
+          _id: user._id,
+          username: user.username,
+          count: 0,
+          log: []
+        });
+      }
+
+      // Format log entries with correct date format
+      const formattedLog = logDoc.log.map(e => ({
+        description: e.description,
+        duration: e.duration,
+        date: new Date(e.date).toDateString()
+      }));
+
       done(null, {
         _id: user._id,
-        username: username,
-        count: logs.length,
-        log: logs.map(e => ({
-          description: e.description,
-          duration: e.duration,
-          date: e.date
-        }))
+        username: user.username,
+        count: logDoc.count,
+        log: formattedLog
       });
     });
   });
@@ -203,7 +249,7 @@ app.post('/api/users/:_id/exercises', function (req, res) {
     exerciseData.username = user.username;
 
     // save exercise
-    createAndSaveExercise(exerciseData, (err, exercise) => {
+    createAndSaveExerciseAndUpdateLog(exerciseData, (err, exercise) => {
       if (err) return res.json({ error: 'Error saving exercise' });
 
       // response object format:
@@ -223,16 +269,49 @@ app.post('/api/users/:_id/exercises', function (req, res) {
 app.get('/api/users/:_id/logs', function (req, res) {
   const userId = req.params._id;
 
+  // Extract query params
+  const from = req.query.from ? new Date(req.query.from) : null;
+  const to = req.query.to ? new Date(req.query.to) : null;
+  const limit = req.query.limit ? parseInt(req.query.limit) : null;
+
+  // validate date parameters if provided
+  if ((from && isNaN(from)) || (to && isNaN(to))) {
+    return res.json({ error: 'Invalid from or to date format' });
+  }
+  if (limit !== null && (isNaN(limit) || limit <= 0)) {
+    return res.json({ error: 'Invalid limit parameter' });
+  }
+
   getLogsOfUser(userId, (err, data) => {
     if (err) {
       return res.json({ error: 'Error retrieving logs' });
     }
-    res.json(data);
+
+    // filter logs if from - to provided
+    let filteredLogs = data.log;
+
+    if (from) {
+      filteredLogs = filteredLogs.filter(logEntry => new Date(logEntry.date) >= from);
+    }
+    if (to) {
+      filteredLogs = filteredLogs.filter(logEntry => new Date(logEntry.date) <= to);
+    }
+
+    // apply limit if provided
+    if (limit) {
+      filteredLogs = filteredLogs.slice(0, limit);
+    }
+
+    // return data with filtered log and updated count
+    res.json({
+      _id: data._id,
+      username: data.username,
+      count: filteredLogs.length,
+      log: filteredLogs
+    });
   });
 });
 /*** endmyversion  ***/
-
-
 
 
 
