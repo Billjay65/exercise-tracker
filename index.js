@@ -97,6 +97,31 @@ const createAndSaveExercise = (exerciseData, done) => {
   });
 };
 
+// Log methods
+// get all logs for a given user
+const getLogsOfUser = (userId, done) => {
+  User.findById(userId, (err, user) => {
+    if (err) return done(err);
+    if (!user) return done(new Error('User not found'));
+
+    const username = user.username;
+
+    Log.find({ username }, (err, logs) => {
+      if (err) return done(err);
+      done(null, {
+        _id: user._id,
+        username: username,
+        count: logs.length,
+        log: logs.map(e => ({
+          description: e.description,
+          duration: e.duration,
+          date: e.date
+        }))
+      });
+    });
+  });
+};
+
 
 module.exports = { Exercise, User, Log };
 
@@ -169,7 +194,7 @@ app.post('/api/users/:_id/exercises', function (req, res) {
     date: date.toDateString()
   };
 
- // find user by _id first to get username
+  // find user by _id first to get username
   User.findById(userId, (err, user) => {
     if (err || !user) {
       return res.json({ error: 'User not found' });
@@ -191,6 +216,18 @@ app.post('/api/users/:_id/exercises', function (req, res) {
         description: exercise.description
       });
     });
+  });
+});
+
+// get logs for a user api endpoint server
+app.get('/api/users/:_id/logs', function (req, res) {
+  const userId = req.params._id;
+
+  getLogsOfUser(userId, (err, data) => {
+    if (err) {
+      return res.json({ error: 'Error retrieving logs' });
+    }
+    res.json(data);
   });
 });
 /*** endmyversion  ***/
